@@ -133,3 +133,34 @@ mod test {
         assert_eq!(4, partial_min(4, 4));
     }
 }
+
+/// Generators and helpers shared by the property-based tests that run under `hegel`.
+#[cfg(test)]
+pub(crate) mod property_tests {
+    use crate::{Coord, Point, Rect, Validation};
+    use hegel::TestCase;
+
+    hegel::derive_generator!(CoordGenerator for Coord {
+        x: f64,
+        y: f64,
+    });
+
+    /// Draws a rect from two arbitrary corners, rejecting the test case if it is not valid
+    /// (for example, if a coordinate is NaN). Degenerate rects (zero width or height) are valid
+    /// and deliberately kept: they are where the predicates are most likely to disagree.
+    pub(crate) fn draw_valid_rect(tc: &TestCase) -> Rect<f64> {
+        let rect = Rect::new(
+            tc.draw(CoordGenerator::new()),
+            tc.draw(CoordGenerator::new()),
+        );
+        tc.assume(rect.check_validation().is_ok());
+        rect
+    }
+
+    /// Draws an arbitrary point, rejecting the test case if it is not valid.
+    pub(crate) fn draw_valid_point(tc: &TestCase) -> Point<f64> {
+        let point = Point::from(tc.draw(CoordGenerator::new()));
+        tc.assume(point.check_validation().is_ok());
+        point
+    }
+}

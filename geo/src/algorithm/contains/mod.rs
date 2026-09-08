@@ -1009,4 +1009,64 @@ mod test {
         let _ = multi_poly.contains(&multi_ls);
         let _ = multi_poly.contains(&multi_poly);
     }
+
+    // Property-based checks that the direct `Contains` implementations agree with the DE-9IM
+    // relate operation.
+    mod property {
+        use super::*;
+        use crate::Validation;
+        use crate::utils::property_tests::{draw_valid_point, draw_valid_rect};
+        use hegel::TestCase;
+
+        #[hegel::test]
+        fn rect_contains_rect_matches_relate(tc: TestCase) {
+            let rect_one = draw_valid_rect(&tc);
+            let rect_two = draw_valid_rect(&tc);
+
+            let im = rect_one.relate(&rect_two);
+            tc.note(&format!("rect_one.relate(&rect_two) = {im:?}"));
+
+            assert_eq!(rect_one.contains(&rect_two), im.is_contains());
+        }
+
+        #[hegel::test]
+        fn rect_contains_rect_matches_polygon_contains_polygon(tc: TestCase) {
+            let rect_one = draw_valid_rect(&tc);
+            let rect_two = draw_valid_rect(&tc);
+
+            let poly_one = rect_one.to_polygon();
+            let poly_two = rect_two.to_polygon();
+
+            // `to_polygon()` of a degenerate rect (zero width and/or zero height) is not a valid
+            // polygon: its ring collapses to too few distinct points, and polygon predicates are
+            // only defined for valid input. `Rect` handles degenerate rects directly, so the two
+            // are only comparable when the polygons are valid.
+            tc.assume(poly_one.check_validation().is_ok() && poly_two.check_validation().is_ok());
+
+            assert_eq!(rect_one.contains(&rect_two), poly_one.contains(&poly_two));
+        }
+
+        #[hegel::test]
+        fn point_contains_rect_matches_relate(tc: TestCase) {
+            let point = draw_valid_point(&tc);
+            let rect = draw_valid_rect(&tc);
+
+            assert_eq!(point.contains(&rect), point.relate(&rect).is_contains());
+        }
+
+        #[hegel::test]
+        fn polygon_contains_polygon_matches_relate(tc: TestCase) {
+            let rect_one = draw_valid_rect(&tc);
+            let rect_two = draw_valid_rect(&tc);
+
+            let poly_one = rect_one.to_polygon();
+            let poly_two = rect_two.to_polygon();
+
+            assert_eq!(
+                poly_one.contains(&poly_two),
+                poly_one.relate(&poly_two).is_contains(),
+                "rect_one={rect_one:?} rect_two={rect_two:?}"
+            );
+        }
+    }
 }
