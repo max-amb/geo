@@ -6,8 +6,8 @@ use super::{
     },
 };
 
-use crate::HasDimensions;
 use crate::{Coord, GeoFloat, GeometryCow, Line, LineString, Point, Polygon};
+use crate::{HasDimensions, dimensions::Dimensions};
 
 use crate::relate::geomgraph::RobustLineIntersector;
 use rstar::{RTree, RTreeNum};
@@ -122,7 +122,7 @@ where
     pub(crate) fn new(arg_index: usize, parent_geometry: GeometryCow<'a, F>) -> Self {
         let mut graph = GeometryGraph {
             arg_index,
-            parent_geometry,
+            parent_geometry: Self::normalize_degenerate_rect(parent_geometry),
             use_boundary_determination_rule: true,
             tree: Arc::new(RTree::new()),
             planar_graph: PlanarGraph::new(),
@@ -137,6 +137,24 @@ where
 
     pub(crate) fn geometry(&self) -> &GeometryCow<'_, F> {
         &self.parent_geometry
+    }
+
+    /// Represent a degenerate rect (for example, a line or a point), as it is. This means that
+    /// we no longer store degenerate geometries as the parent geometry. This bypasses issues
+    /// caused by producing a collapsed ring polygon causing incorrect DE-9IM matrices.
+    ///
+    /// Note the visible consequence: `parent_geometry()` may hand back a `Point` or `Line` where
+    /// the caller passed a `Rect`.
+    fn normalize_degenerate_rect(geometry: GeometryCow<'a, F>) -> GeometryCow<'a, F> {
+        let GeometryCow::Rect(rect) = &geometry else {
+            return geometry;
+        };
+        match rect.dimensions() {
+            Dimensions::ZeroDimensional => GeometryCow::from(Point::from(rect.min())),
+            Dimensions::OneDimensional => GeometryCow::from(Line::new(rect.min(), rect.max())),
+            Dimensions::TwoDimensional => geometry,
+            Dimensions::Empty => unreachable!("a Rect is never empty"),
+        }
     }
 
     /// Determine whether a component (node or edge) that appears multiple times in elements
@@ -162,6 +180,9 @@ where
         match geometry {
             GeometryCow::Line(line) => self.add_line(line),
             GeometryCow::Rect(rect) => {
+                // Degenerate rects were normalized to `Point` / `Line` in `GeometryGraph::new`.
+                debug_assert_eq!(rect.dimensions(), Dimensions::TwoDimensional);
+
                 // PERF: avoid this conversion/clone?
                 self.add_polygon(&rect.to_polygon());
             }
