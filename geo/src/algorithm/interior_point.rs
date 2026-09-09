@@ -5,6 +5,8 @@ use crate::algorithm::{
     centroid::Centroid,
     coords_iter::CoordsIter,
     dimensions::HasDimensions,
+    intersects::Intersects,
+    kernels::{Kernel, Orientation},
     line_intersection::LineIntersection,
     line_measures::{Distance, Euclidean},
     lines_iter::LinesIter,
@@ -14,6 +16,7 @@ use crate::geometry::*;
 // use crate::old_sweep::{Intersections, SweepPoint};
 use crate::GeoFloat;
 use crate::sweep::Intersections;
+use crate::utils::lex_cmp;
 
 /// Calculation of interior points.
 ///
@@ -372,18 +375,43 @@ where
     type Output = Point<T>;
 
     fn interior_point(&self) -> Self::Output {
-        self.centroid()
+        let candidate =
+            if T::Ker::orient2d(self.v1(), self.v2(), self.v3()) == Orientation::Collinear {
+                // A triangle like this is degenerate in some way, for example, it could be that
+                // all the points are on a straight line. We use the midpoint of the longest
+                // distance edge in this case.
+                let vertices = self.to_array();
+                let start = vertices
+                    .iter()
+                    .min_by(|a, b| lex_cmp(a, b))
+                    .expect("A triangle has three vertices");
+                let end = vertices
+                    .iter()
+                    .max_by(|a, b| lex_cmp(a, b))
+                    .expect("A triangle has three vertices");
+                (*start + *end) / (T::one() + T::one())
+            } else {
+                self.center()
+            };
+
+        // Rounding can still push the candidate off a very thin or degenerate triangle.
+        if self.intersects(&candidate) {
+            candidate.into()
+        } else {
+            // Just use the first vertex if we cannot do anything else.
+            self.v1().into()
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::utils::property_tests::draw_valid_triangle;
     use crate::{
         algorithm::{contains::Contains, intersects::Intersects},
         coord, line_string, point, polygon,
     };
-    use crate::utils::property_tests::draw_valid_triangle;
     use hegel::TestCase;
 
     /// small helper to create a coordinate
