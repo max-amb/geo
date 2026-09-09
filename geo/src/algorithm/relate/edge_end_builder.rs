@@ -66,7 +66,7 @@ impl<F: GeoFloat> EdgeEndBuilder<F> {
         ei_prev: Option<&EdgeIntersection<F>>,
     ) {
         let mut i_prev = ei_curr.segment_index();
-        if ei_curr.distance().is_zero() {
+        if ei_curr.is_at_segment_start() {
             // if at the start of the edge there is no previous edge
             if i_prev == 0 {
                 return;
