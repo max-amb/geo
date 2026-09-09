@@ -43,7 +43,13 @@ impl<F: GeoFloat> std::cmp::Ord for NodeKey<F> {
         debug_assert!(!self.0.y.is_nan());
         debug_assert!(!other.0.x.is_nan());
         debug_assert!(!other.0.y.is_nan());
-        crate::utils::lex_cmp(&self.0, &other.0)
+        // This must agree with `PartialEq` below, which compares the ordinates with `==`.
+        use std::cmp::Ordering;
+        self.0
+            .x
+            .partial_cmp(&other.0.x)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| self.0.y.partial_cmp(&other.0.y).unwrap_or(Ordering::Equal))
     }
 }
 
