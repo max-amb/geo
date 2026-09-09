@@ -138,11 +138,11 @@ where
                 // the mutable borrows are short lived and do not overlap.
                 edge0
                     .borrow_mut()
-                    .add_intersections(intersection, line_0, segment_index_0);
+                    .add_intersections(intersection, segment_index_0);
 
                 edge1
                     .borrow_mut()
-                    .add_intersections(intersection, line_1, segment_index_1);
+                    .add_intersections(intersection, segment_index_1);
             }
             if let LineIntersection::SinglePoint {
                 is_proper: true,

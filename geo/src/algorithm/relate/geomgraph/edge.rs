@@ -1,5 +1,5 @@
+use super::LineIntersection;
 use super::{Dimensions, Direction, EdgeIntersection, IntersectionMatrix, Label};
-use super::{LineIntersection, LineIntersector, RobustLineIntersector};
 use crate::{Coord, GeoFloat, Line};
 
 use std::collections::BTreeSet;
@@ -59,6 +59,17 @@ impl<F: GeoFloat> Edge<F> {
         &self.coords
     }
 
+    /// The segment starting at vertex `index`.
+    ///
+    /// Protects against `add_intersection` and `add_edge_intersection_list_endpoints`
+    /// using a segment that doesn't exist. This can happen when the intersection is 
+    /// at the end of the final segment. We create a zero-length final segment in this case.
+    /// This is ok because if this segment is used, only one coordinate would ever be found.
+    pub fn segment(&self, index: usize) -> Line<F> {
+        let last = self.coords.len() - 1;
+        Line::new(self.coords[index], self.coords[(index + 1).min(last)])
+    }
+
     pub fn is_isolated(&self) -> bool {
         self.is_isolated
     }
@@ -79,12 +90,14 @@ impl<F: GeoFloat> Edge<F> {
         let max_segment_index = self.coords().len() - 1;
         let first_coord = self.coords()[0];
         let max_coord = self.coords()[max_segment_index];
+        let first_segment = self.segment(0);
+        let last_segment = self.segment(max_segment_index);
         self.edge_intersections_mut()
-            .insert(EdgeIntersection::new(first_coord, 0, F::zero()));
+            .insert(EdgeIntersection::new(first_coord, 0, first_segment));
         self.edge_intersections_mut().insert(EdgeIntersection::new(
             max_coord,
             max_segment_index,
-            F::zero(),
+            last_segment,
         ));
     }
 
@@ -94,19 +107,14 @@ impl<F: GeoFloat> Edge<F> {
 
     /// Adds EdgeIntersections for one or both intersections found for a segment of an edge to the
     /// edge intersection list.
-    pub fn add_intersections(
-        &mut self,
-        intersection: LineIntersection<F>,
-        line: Line<F>,
-        segment_index: usize,
-    ) {
+    pub fn add_intersections(&mut self, intersection: LineIntersection<F>, segment_index: usize) {
         match intersection {
             LineIntersection::SinglePoint { intersection, .. } => {
-                self.add_intersection(intersection, line, segment_index);
+                self.add_intersection(intersection, segment_index);
             }
             LineIntersection::Collinear { intersection } => {
-                self.add_intersection(intersection.start, line, segment_index);
-                self.add_intersection(intersection.end, line, segment_index);
+                self.add_intersection(intersection.start, segment_index);
+                self.add_intersection(intersection.end, segment_index);
             }
         }
     }
@@ -115,14 +123,8 @@ impl<F: GeoFloat> Edge<F> {
     ///
     /// An intersection that falls exactly on a vertex of the edge is normalized to use the higher
     /// of the two possible `segment_index`
-    pub fn add_intersection(
-        &mut self,
-        intersection_coord: Coord<F>,
-        line: Line<F>,
-        segment_index: usize,
-    ) {
+    pub fn add_intersection(&mut self, intersection_coord: Coord<F>, segment_index: usize) {
         let mut normalized_segment_index = segment_index;
-        let mut distance = RobustLineIntersector::compute_edge_distance(intersection_coord, line);
 
         let next_segment_index = normalized_segment_index + 1;
 
@@ -130,13 +132,15 @@ impl<F: GeoFloat> Edge<F> {
             let next_coord = self.coords[next_segment_index];
             if intersection_coord == next_coord {
                 normalized_segment_index = next_segment_index;
-                distance = F::zero();
             }
         }
+        // The position key is relative to the segment the intersection is filed under, so it
+        // must be computed against the normalized segment.
+        let segment = self.segment(normalized_segment_index);
         self.edge_intersections.insert(EdgeIntersection::new(
             intersection_coord,
             normalized_segment_index,
-            distance,
+            segment,
         ));
     }
 
