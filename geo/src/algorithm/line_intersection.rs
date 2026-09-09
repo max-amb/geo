@@ -230,7 +230,51 @@ fn nearest_endpoint<F: GeoFloat>(p: Line<F>, q: Line<F>) -> Coord<F> {
     nearest_pt
 }
 
+/// Computes the intersection point of the (non-parallel) lines through `p` and `q`, or `None`
+/// if the computation breaks down numerically.
 fn raw_line_intersection<F: GeoFloat>(p: Line<F>, q: Line<F>) -> Option<Coord<F>> {
+    // `raw_line_intersection_unscaled` fails loudly.
+    if let Some(intersection) = raw_line_intersection_unscaled(p, q) {
+        return Some(intersection);
+    }
+
+    // We use the fact that scaling is a linear map. Let $S$ be the scaling linear map.
+    // Via the linearity of linear maps, the combination of the operations on performed in 
+    // `raw_line_intersection_unscaled` can be unscaled using S⁻¹.
+    let sx = axis_scale([p.start.x, p.end.x, q.start.x, q.end.x])?;
+    let sy = axis_scale([p.start.y, p.end.y, q.start.y, q.end.y])?;
+    let scale = |c: Coord<F>| coord! { x: c.x * sx, y: c.y * sy };
+    let scaled = raw_line_intersection_unscaled(
+        Line::new(scale(p.start), scale(p.end)),
+        Line::new(scale(q.start), scale(q.end)),
+    )?;
+    let intersection = coord! { x: scaled.x / sx, y: scaled.y / sy };
+    (intersection.x.is_finite() && intersection.y.is_finite()).then_some(intersection)
+}
+
+/// Returns a power of two that brings the largest of `ordinates` to roughly `2^(0.3 · e_max)`
+/// (`2^306` for `f64`), where `e_max` is the type's largest binary exponent. The computation
+/// multiplies up to three differences of such ordinates, and `3 · 0.3 < 1` keeps that clear of
+/// overflow. `None` if any ordinate is not finite, `1` if all of them are zero.
+fn axis_scale<F: GeoFloat>(ordinates: [F; 4]) -> Option<F> {
+    use crate::utils::{max_binary_exponent, power_of_two_scale};
+
+    if ordinates.iter().any(|ordinate| !ordinate.is_finite()) {
+        return None;
+    }
+    let max_abs = ordinates
+        .iter()
+        .fold(F::zero(), |max, ordinate| max.max(ordinate.abs()));
+    if max_abs == F::zero() {
+        return Some(F::one());
+    }
+    Some(power_of_two_scale(
+        max_abs,
+        max_binary_exponent::<F>() * 3 / 10,
+    ))
+}
+
+fn raw_line_intersection_unscaled<F: GeoFloat>(p: Line<F>, q: Line<F>) -> Option<Coord<F>> {
     let p_min_x = p.start.x.min(p.end.x);
     let p_min_y = p.start.y.min(p.end.y);
     let p_max_x = p.start.x.max(p.end.x);
@@ -272,6 +316,13 @@ fn raw_line_intersection<F: GeoFloat>(p: Line<F>, q: Line<F>) -> Option<Coord<F>
     let xw = py * qw - qy * pw;
     let yw = qx * pw - px * qw;
     let w = px * qy - qx * py;
+
+    // Every intermediate feeds into at least one of these three multiplicatively, so any
+    // overflow along the way surfaces here as an infinity or a NaN. Without this check an
+    // infinite `w` could still yield a finite, wrong `0` for the quotients below.
+    if !(w.is_finite() && xw.is_finite() && yw.is_finite()) {
+        return None;
+    }
 
     let x_int = xw / w;
     let y_int = yw / w;
