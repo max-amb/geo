@@ -383,6 +383,8 @@ mod test {
         algorithm::{contains::Contains, intersects::Intersects},
         coord, line_string, point, polygon,
     };
+    use crate::utils::property_tests::draw_valid_triangle;
+    use hegel::TestCase;
 
     /// small helper to create a coordinate
     fn c<T: GeoFloat>(x: T, y: T) -> Coord<T> {
@@ -758,38 +760,6 @@ mod test {
             mixed_shapes.interior_point().unwrap()
         )
     }
-    #[test]
-    fn triangles() {
-        // boring triangle
-        assert_eq!(
-            Triangle::new(c(0., 0.), c(3., 0.), c(1.5, 3.)).interior_point(),
-            point!(x: 1.5, y: 1.0)
-        );
-
-        // flat triangle
-        assert_eq!(
-            Triangle::new(c(0., 0.), c(3., 0.), c(1., 0.)).interior_point(),
-            point!(x: 1.5, y: 0.0)
-        );
-
-        // flat triangle that's not axis-aligned
-        assert_eq!(
-            Triangle::new(c(0., 0.), c(3., 3.), c(1., 1.)).interior_point(),
-            point!(x: 1.5, y: 1.5)
-        );
-
-        // triangle with some repeated points
-        assert_eq!(
-            Triangle::new(c(0., 0.), c(0., 0.), c(1., 0.)).interior_point(),
-            point!(x: 0.5, y: 0.0)
-        );
-
-        // triangle with all repeated points
-        assert_eq!(
-            Triangle::new(c(0., 0.5), c(0., 0.5), c(0., 0.5)).interior_point(),
-            point!(x: 0., y: 0.5)
-        )
-    }
 
     #[test]
     fn degenerate_triangle_like_ring() {
@@ -928,5 +898,12 @@ mod test {
             ],
         );
         let _ = poly.interior_point();
+    }
+
+    #[hegel::test]
+    fn triangles(tc: TestCase) {
+        let triangle = draw_valid_triangle(&tc);
+        let point = triangle.interior_point();
+        assert!(triangle.intersects(&point), "{point:?}");
     }
 }
